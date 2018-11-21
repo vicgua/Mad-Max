@@ -1,0 +1,7 @@
+*.o
+!AIDummy.o
+!AIDummy.o.*
+*.exe
+Game
+SecGame
+Makefile.deps

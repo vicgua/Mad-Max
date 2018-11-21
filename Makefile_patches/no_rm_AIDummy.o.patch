@@ -1,0 +1,12 @@
+--- Original
++++ Patched
+@@ -53,7 +53,8 @@
+ all: Game 
+ 
+ clean:
+-	rm -rf Game SecGame *.o *.exe Makefile.deps
++	@rm -vf Game SecGame *.exe Makefile.deps
++	@find *.o -maxdepth 0 ! -name 'AIDummy.o' -type f -exec rm -vf {} +
+ 
+ # Order of objects is important here to deactivate standard sleep function.
+ 

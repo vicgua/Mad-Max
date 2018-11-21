@@ -31,7 +31,6 @@ PROFILE  = 0 # Compile for profile (0 or 1)
 
 PLAYERS_SRC = $(wildcard AI*.cc)
 PLAYERS_OBJ = $(patsubst %.cc, %.o, $(PLAYERS_SRC)) $(EXTRA_OBJS) $(DUMMY_OBJ)
-PLAYERS_SHARE_OBJ = $(patsubst %.o, %.share.o, $(PLAYERS_OBJ))
 
 # Flags
 
@@ -54,8 +53,7 @@ LDFLAGS  = -std=c++11 -lm $(ARCHFLAGS) $(PROFILEFLAGS) $(DEBUGFLAGS) -O$(strip $
 all: Game 
 
 clean:
-	@rm -vf Game SecGame *.exe Makefile.deps
-	@find *.o -maxdepth 0 ! -name 'AIDummy.o' -type f -exec rm -vf {} +
+	rm -rf Game SecGame *.o *.exe Makefile.deps
 
 # Order of objects is important here to deactivate standard sleep function.
 
@@ -72,9 +70,3 @@ Makefile.deps: *.cc
 	$(CXX) $(CXXFLAGS) -MM *.cc > Makefile.deps
 
 include Makefile.deps
-
-.PHONY: shareobjs
-shareobjs: $(PLAYERS_SHARE_OBJ)
-
-%.share.obj: %.o
-	strip $^ -o $@
