@@ -72,9 +72,3 @@ Makefile.deps: *.cc
 	$(CXX) $(CXXFLAGS) -MM *.cc > Makefile.deps
 
 include Makefile.deps
-
-.PHONY: shareobjs
-shareobjs: $(PLAYERS_SHARE_OBJ)
-
-%.share.obj: %.o
-	strip $^ -o $@
