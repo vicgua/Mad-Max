@@ -7,9 +7,6 @@
  */
 #define PLAYER_NAME Demo
 
-// DISCLAIMER: The following Demo player is *not* meant to do anything
-// sensible. It is provided just to illustrate how to use the API.
-// Please use AINull.cc as a template for your player.
 
 struct PLAYER_NAME : public Player {
 
@@ -42,7 +39,7 @@ struct PLAYER_NAME : public Player {
       else { // Otherwise, ...
         bool city = false;
         for (int k = 0; not city and k < 8; ++k) {
-          Pos p = unit(id).pos;
+          Pos p = unit(id).pos + Dir(k);
           if (pos_ok(p) and cell(p).type == City) { // if we are next to a city cell, we try to move there.
             city = true;
             command(id, Dir(k));
