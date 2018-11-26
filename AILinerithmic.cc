@@ -60,9 +60,14 @@ private:
         Pos target = Pos(-1, -1);
     };
 
+
     struct Car {
         CarType type;
-        CarMode mode = Wanderer;
+        CarMode mode;
+        Car() : mode(Wanderer) {
+            //type = (random(0, 2) < 2) ? Patroller : OffRoad;
+            type = OffRoad; // tmp
+        }
     };
 
     /** A struct for assigning a score to a cell. */
@@ -70,6 +75,13 @@ private:
         Pos cell_pos;
         int score;
     };
+
+
+    map<int, Warrior> my_warriors;
+    map<int, Car> my_cars;
+    // TODO: Queue idle warriors and wandering cars
+    queue<int> idle_warriors;
+    queue<int> wandering_cars;
 
     /** The AI is designed to operate in 4-times, so this will help in deciding
      * which tasks to do this round. */
@@ -109,9 +121,6 @@ private:
             }
         }
     }
-
-    map<int, Warrior> my_warriors;
-    map<int, Car> my_cars;
 
     bool find_enemy(Pos start_pos, Pos &nearest_enemy, int max_depth,
                     bool can_city) const {
@@ -203,11 +212,11 @@ private:
         if (stored != to.end()) { to.erase(stored, to.end()); }
     }
 
-    void recalculate_warriors() {
+    inline void recalculate_warriors() {
         recalculate<Warrior>(warriors(me()), my_warriors);
     }
 
-    void recalculate_cars() { recalculate<Car>(cars(me()), my_cars); }
+    inline void recalculate_cars() { recalculate<Car>(cars(me()), my_cars); }
 
 public:
     void play() {
