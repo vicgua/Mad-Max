@@ -113,9 +113,6 @@ private:
     map<int, Warrior> my_warriors;
     map<int, Car> my_cars;
 
-    static constexpr array<Dir, DirSize - 1> moving_directions{
-        Bottom, BR, Right, RT, Top, TL, Left, LB};
-
     bool find_enemy(Pos start_pos, Pos &nearest_enemy, int max_depth,
                     bool can_city) const {
         queue<pair<Pos, int>> bfsq;
@@ -144,16 +141,32 @@ private:
                 }
             }
             if (curr.second <= 0) { continue; } // Exceeded max_depth
-            for (Dir d : moving_directions) {
-                bfsq.push({curr.first + d, curr.second - 1});
+            for (int d = 0; d < DirSize - 1; ++d) {
+                bfsq.push({curr.first + Dir(d), curr.second - 1});
             }
         }
         return false;
     }
 
-    void move_warrior(int id, Warrior &warrior_info) {}
+    void move_warrior(int id, Warrior &warrior_info) {
+        // TODO
+    }
 
-    void move_car(int id, Car &car_info) {}
+    void move_car(int id, Car &car_info) {
+        Unit unit_info = unit(id);
+        if (car_info.type == Patroller) {
+            // TODO
+        } else if (car_info.type == OffRoad) {
+            Pos dest_pos;
+            Dir dest_dir;
+            if (find_enemy(unit_info.pos, dest_pos, 3, false)) {
+                dest_dir = dir_from_pos_dif(unit_info.pos, dest_pos);
+            } else {
+                dest_dir = Dir(random(0, DirSize - 1)); // None is not accepted
+            }
+            command(id, dest_dir);
+        }
+    }
 
     template <typename T>
     void recalculate(const vector<int> &from, map<int, T> &to) {
