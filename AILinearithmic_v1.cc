@@ -3,7 +3,7 @@
 #include <queue>
 #include <utility>
 
-#define PLAYER_NAME Linearithmic
+#define PLAYER_NAME Linearithmic_v1
 
 using namespace std;
 
@@ -79,6 +79,7 @@ private:
     map<int, Warrior> my_warriors;
     map<int, Car> my_cars;
     vector<vector<int>> reserved_cells;
+    vector<int> city_owners;
 
     /** The AI is designed to operate in 4-times, so this will help in deciding
      * which tasks to do this round. */
@@ -261,6 +262,11 @@ private:
     void init() {
         reserved_cells =
             std::move(vector<vector<int>>(rows(), vector<int>(cols(), -1)));
+        const auto city_vector = cities();
+        city_owners = std::move(vector<int>(city_vector.size()));
+        for (unsigned int i = 0; i < city_owners.size(); ++i) {
+            city_owners[i] = cell(city_vector[i][0]).owner;
+        }
     }
 
 public:
@@ -286,7 +292,7 @@ public:
             case 1:
                 break;
             case 2:
-                if (round() != 0) { recalculate_cars(); }
+
                 break;
             case 3:
                 recalculate_warriors();
@@ -294,6 +300,8 @@ public:
             default:
                 cerr << "Reached time " << time() << endl;
         }
+
+        recalculate_cars();
 
         for (auto &car : my_cars) {
             if (can_move(car.first)) { move_car(car.first, car.second); }
