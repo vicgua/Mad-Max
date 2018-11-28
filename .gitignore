@@ -1,9 +1,16 @@
+# Object files
 *.o
+# Keep (non-reconstructible) dummy objects
 !AIDummy.o
 !AIDummy.o.*
-*.exe
+# Compiled binaries
 Game
 SecGame
+*.exe
+# Build and run subproducts
 Makefile.deps
 /default.res
+# Doxygen documentation
 /docs/
+# Profiler output
+gmon.out

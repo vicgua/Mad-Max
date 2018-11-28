@@ -1,6 +1,7 @@
 #include "Player.hh"
 #include <map>
 #include <queue>
+#include <utility>
 
 #define PLAYER_NAME Linearithmic
 
@@ -56,16 +57,15 @@ private:
     };
 
     struct Warrior {
-        WarriorMode mode = Idle;
+        WarriorMode mode = Invader;
         Pos target = Pos(-1, -1);
     };
-
 
     struct Car {
         CarType type;
         CarMode mode;
-        Car() : mode(Wanderer) {
-            //type = (random(0, 2) < 2) ? Patroller : OffRoad;
+        Car() : mode(KillingSpree) {
+            // type = (random(0, 2) < 2) ? Patroller : OffRoad;
             type = OffRoad; // tmp
         }
     };
@@ -76,12 +76,9 @@ private:
         int score;
     };
 
-
     map<int, Warrior> my_warriors;
     map<int, Car> my_cars;
-    // TODO: Queue idle warriors and wandering cars
-    queue<int> idle_warriors;
-    queue<int> wandering_cars;
+    vector<vector<int>> reserved_cells;
 
     /** The AI is designed to operate in 4-times, so this will help in deciding
      * which tasks to do this round. */
@@ -157,6 +154,40 @@ private:
         return false;
     }
 
+    inline bool is_reserved(Pos p) {
+        if (not pos_ok(p)) { return false; } // TODO: Convert to assertions
+        return reserved_cells[p.i][p.j] >= round();
+    }
+
+    inline bool is_reserved(unsigned int x, unsigned int y) {
+        if (x < 0 or x >= reserved_cells.size() or y < 0 or
+            y >= reserved_cells[x].size()) {
+            return false;
+        }
+        return reserved_cells[x][y] >= round();
+    }
+
+    inline void reserve(Pos p) {
+        if (not pos_ok(p)) { return; }
+        reserved_cells[p.i][p.j] = round();
+    }
+
+    inline void reserve(unsigned int x, unsigned int y) {
+        if (x < 0 or x >= reserved_cells.size() or y < 0 or
+            y >= reserved_cells[x].size()) {
+            return;
+        }
+        reserved_cells[x][y] = round();
+    }
+
+    bool friend_in_pos(Pos p) {
+        if (is_reserved(p)) { return true; }
+        Cell c = cell(p);
+        if (c.id == -1) { return false; }
+        Unit u = unit(c.id);
+        return u.player == me();
+    }
+
     void move_warrior(int id, Warrior &warrior_info) {
         // TODO
     }
@@ -169,10 +200,19 @@ private:
             Pos dest_pos;
             Dir dest_dir;
             if (find_enemy(unit_info.pos, dest_pos, 3, false)) {
-                dest_dir = dir_from_pos_dif(unit_info.pos, dest_pos);
+                if (is_reserved(dest_pos)) {
+                    dest_dir = Dir::None;
+                } else {
+                    dest_dir = dir_from_pos_dif(unit_info.pos, dest_pos);
+                }
             } else {
-                dest_dir = Dir(random(0, DirSize - 1)); // None is not accepted
+                do {
+                    dest_dir =
+                        Dir(random(0, DirSize - 1)); // None is not accepted
+                    dest_pos = unit_info.pos + dest_dir;
+                } while (not pos_ok(dest_pos) or friend_in_pos(dest_pos));
             }
+            reserve(dest_pos);
             command(id, dest_dir);
         }
     }
@@ -218,6 +258,11 @@ private:
 
     inline void recalculate_cars() { recalculate<Car>(cars(me()), my_cars); }
 
+    void init() {
+        reserved_cells =
+            std::move(vector<vector<int>>(rows(), vector<int>(cols(), -1)));
+    }
+
 public:
     void play() {
         if (nb_players() != 4) {
@@ -225,6 +270,7 @@ public:
             while (1)
                 ;
         }
+        if (round() == 0) { init(); }
         int ctime = time();
         if (round() == 0 and ctime != 3) {
             recalculate_cars();
@@ -238,7 +284,9 @@ public:
                 }
                 break;
             case 1:
+                break;
             case 2:
+                if (round() != 0) { recalculate_cars(); }
                 break;
             case 3:
                 recalculate_warriors();
@@ -246,8 +294,6 @@ public:
             default:
                 cerr << "Reached time " << time() << endl;
         }
-
-        recalculate_cars();
 
         for (auto &car : my_cars) {
             if (can_move(car.first)) { move_car(car.first, car.second); }
