@@ -15,10 +15,11 @@ private:
 
     const int infinity = numeric_limits<int>::max();
 
-    bool calculated_nearest_water;
     vector<vector<int>> _nearest_water;
-    bool calculated_nearest_station;
     vector<vector<int>> _nearest_station;
+
+    vector<int> city_owners;
+    vector<bool> city_owner_changed;
 
     /** A vector containing the locked cells.
      * A lock is valid until the round marked by this vector (not included).
@@ -42,81 +43,65 @@ private:
 
     inline bool is_locked(Pos p) { return is_locked(p.i, p.j); }
 
-    // TODO: Template this
-    void calculate_nearest_water() {
+    void _calculate_nearest(const set<Pos> &cells,
+                            vector<vector<int>> &dist_matrix,
+                            const bool can_pass_city, const int desert_penalty,
+                            const int road_penalty) {
         queue<Pos> bfsq;
-        for (auto pos : water_cells) {
-            _nearest_water[pos.i][pos.j] = 0;
+        for (auto pos : cells) {
+            dist_matrix[pos.i][pos.j] = 0;
             bfsq.push(pos);
         }
         while (not bfsq.empty()) {
             Pos curr = bfsq.front();
             bfsq.pop();
-            int new_dist = _nearest_water[curr.i][curr.j] + 1;
+            int base_dist = dist_matrix[curr.i][curr.j];
             for (int d = 0; d < DirSize; ++d) {
+                int new_dist = base_dist + 1;
                 Pos next_pos = curr + Dir(d);
                 if (not pos_ok(next_pos)) { continue; }
                 switch (cell(next_pos).type) {
                     case Station:
                     case Wall:
-                        // Distance = inf (impassable)
-                        continue;
-                    default:
-                        break;
-                }
-                if (_nearest_water[next_pos.i][next_pos.j] > new_dist) {
-                    _nearest_water[next_pos.i][next_pos.j] = new_dist;
-                    bfsq.push(next_pos);
-                }
-            }
-        }
-    }
-
-    void calculate_nearest_station() {
-        queue<Pos> bfsq;
-        for (auto pos : station_cells) {
-            _nearest_station[pos.i][pos.j] = 0;
-            bfsq.push(pos);
-        }
-        while (not bfsq.empty()) {
-            Pos curr = bfsq.front();
-            bfsq.pop();
-            int base_dist = _nearest_station[curr.i][curr.j] + 1;
-            for (int d = 0; d < DirSize - 1; ++d) { // Ignore None
-                int new_dist = base_dist + 1;
-                Pos next_pos = curr + Dir(d);
-                if (not pos_ok(next_pos)) { continue; }
-                switch (cell(next_pos).type) {
-                    case City:
-                    case Wall:
                     case Water:
-                        // Distance = inf (impassable)
-                        continue;
+                        continue; // Impassable
+                    case City:
+                        if (not can_pass_city) { continue; }
+                        break;
                     case Desert:
-                        new_dist += 4; // Penalty for not going through the road
+                        new_dist += desert_penalty;
+                        break;
+                    case Road:
+                        new_dist += road_penalty;
                         break;
                     default:
+                        // TODO: Assert unreachable
                         break;
                 }
-                if (_nearest_station[next_pos.i][next_pos.j] > new_dist) {
-                    _nearest_station[next_pos.i][next_pos.j] = new_dist;
+                if (dist_matrix[next_pos.i][next_pos.j] > new_dist) {
+                    dist_matrix[next_pos.i][next_pos.j] = new_dist;
                     bfsq.push(next_pos);
                 }
             }
         }
     }
 
-    Dir nearest_water(Pos from) {
-        if (not calculated_nearest_water) {
-            calculate_nearest_water();
-            calculated_nearest_water = true;
-        }
-        int current_min = _nearest_water[from.i][from.j];
+    inline void calculate_nearest_water() {
+        _calculate_nearest(water_cells, _nearest_water, true, 0, 1);
+    }
+
+    inline void calculate_nearest_station() {
+        _calculate_nearest(station_cells, _nearest_station, false, 3, 0);
+    }
+
+    Dir _nearest(Pos from, const vector<vector<int>> &distances) {
+        int current_min = distances[from.i][from.j];
         Dir current_dir = None;
-        for (int d = 0; d < DirSize - 1; ++d) { // Ignore None
+        vector<int> directions(random_permutation(DirSize - 1));
+        for (int d : directions) {
             Pos next_pos = from + Dir(d);
             if (not pos_ok(next_pos)) { continue; }
-            int next_pos_dist = _nearest_water[next_pos.i][next_pos.j];
+            int next_pos_dist = distances[next_pos.i][next_pos.j];
             if (next_pos_dist < current_min) {
                 current_min = next_pos_dist;
                 current_dir = Dir(d);
@@ -125,64 +110,26 @@ private:
         return current_dir;
     }
 
-    static void print_matrix(const vector<vector<int>> &m) {
-        for (auto v : m) {
-            for (auto i : v) { cerr << i << ' '; }
-            cerr << endl;
-        }
+    inline Dir nearest_water(Pos from) {
+        return _nearest(from, _nearest_water);
     }
 
-    Dir nearest_station(Pos from) {
-        if (not calculated_nearest_station) {
-            calculate_nearest_station();
-            calculated_nearest_station = true;
-        }
-        int current_min = _nearest_station[from.i][from.j];
-        Dir current_dir = None;
-        vector<int> distances(DirSize - 1);
-        for (int d = 0; d < DirSize - 1; ++d) { // Ignore None
-            Pos next_pos = from + Dir(d);
-            if (not pos_ok(next_pos)) {
-                distances[d] = -1;
-                continue;
-            }
-            int next_pos_dist = _nearest_station[next_pos.i][next_pos.j];
-            distances[d] = next_pos_dist;
-            if (next_pos_dist < current_min) {
-                current_min = next_pos_dist;
-                current_dir = Dir(d);
+    inline Dir nearest_station(Pos from) {
+        return _nearest(from, _nearest_station);
+    }
+
+    void recalculate_city_owners() {
+        const vector<vector<Pos>> cit(cities());
+        vector<bool> changed(cit.size(), false);
+        for (unsigned int c = 0; c < cit.size(); ++c) {
+            int old_owner = city_owners[c];
+            int new_owner = cell(cit[c][0]).owner;
+            if (old_owner != new_owner) {
+                city_owners[c] = new_owner;
+                changed[c] = true;
             }
         }
-        if (false) {
-            CellType from_t = cell(from).type;
-            Pos to = from + current_dir;
-            CellType to_t = cell(to).type;
-            if (from_t == Road and to_t == Desert) {
-                cerr << "Going from " << from << " [Road] ";
-                cerr << "to " << to << " [Desert]" << endl;
-                cerr << "Alternatives were:" << endl;
-                for (int d = 0; d < DirSize - 1; ++d) {
-                    Pos next_pos = from + Dir(d);
-                    CellType type = cell(next_pos).type;
-                    string type_s;
-                    switch (type) {
-                        case Road:
-                            type_s = "Road";
-                            break;
-                        case Desert:
-                            type_s = "Desert";
-                            break;
-                        default:
-                            type_s = "Invalid";
-                            break;
-                    }
-                    cerr << "  " << next_pos << " [" << type_s
-                         << "]: " << distances[d] << endl;
-                }
-                cin.get();
-            }
-        }
-        return current_dir;
+        city_owner_changed = move(changed);
     }
 
     void move_warrior(int id) {
@@ -214,8 +161,11 @@ private:
         }
         _nearest_water = _nearest_station =
             vector<vector<int>>(r, vector<int>(c, infinity));
-        calculated_nearest_water = calculated_nearest_station = false;
+        calculate_nearest_water();
+        calculate_nearest_station();
         cell_locks = vector<vector<int>>(r, vector<int>(c, 0));
+        city_owners = vector<int>(cities().size());
+        city_owner_changed = vector<bool>(city_owners.size());
     }
 
 public:
@@ -225,6 +175,7 @@ public:
             if (can_move(car)) { move_car(car); }
         }
         if (round() % 4 == me()) {
+            recalculate_city_owners();
             for (int warrior : warriors(me())) { move_warrior(warrior); }
         }
     }
