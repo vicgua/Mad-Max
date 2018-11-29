@@ -14,3 +14,5 @@ Makefile.deps
 /docs/
 # Profiler output
 gmon.out
+# Debugging output
+debug.log
