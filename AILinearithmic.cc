@@ -1,5 +1,4 @@
 #include "Player.hh"
-#include <functional>
 #include <limits>
 #include <queue>
 #include <set>
@@ -9,13 +8,11 @@
 
 using namespace std;
 
-// NOTE: This is unlikely to defeat Dummy, but I want to test whether it
-// is a good idea to precalculate all distances, and if doing so would
-// exceed Jutge's allowed CPU time and memory usage.
-
 class PLAYER_NAME : public Player {
 private:
     const int infinity = numeric_limits<int>::max();
+    const int negative_infinity = numeric_limits<int>::min();
+    const int number_of_players = 4;
 
     vector<set<Pos>> city_cells;
     vector<vector<vector<int>>> nearest_city_;
@@ -91,16 +88,17 @@ private:
     }
 
     inline void calculate_nearest_water(const set<Pos> &water_cells) {
-        _calculate_nearest(water_cells, nearest_water_, true, 0, 2);
+        _calculate_nearest(water_cells, nearest_water_, true, 0, 5);
     }
 
     inline void calculate_nearest_station(const set<Pos> &station_cells) {
-        _calculate_nearest(station_cells, nearest_station_, false, 3, 0);
+        _calculate_nearest(station_cells, nearest_station_, false,
+                           number_of_players - 1, 0);
     }
 
     inline void calculate_nearest_city(int city_id) {
         _calculate_nearest(city_cells[city_id], nearest_city_[city_id], true, 0,
-                           2);
+                           5);
     }
 
     inline int _distance_to(Pos from, const vector<vector<int>> &distances) {
@@ -197,6 +195,66 @@ private:
         city_cells.push_back(move(new_city));
     }
 
+    Dir dir_from_pos(Pos from, Pos to) {
+        if (from.i < to.i) {
+            if (from.j < to.j) {
+                return Dir::BR;
+            } else if (from.j > to.j) {
+                return Dir::LB;
+            } else { // from.j == to.j
+                return Dir::Bottom;
+            }
+        } else if (from.i > to.i) {
+            if (from.j < to.j) {
+                return Dir::RT;
+            } else if (from.j > to.j) {
+                return Dir::TL;
+            } else { // from.j == to.j
+                return Dir::Top;
+            }
+        } else { // a.i == b.i
+            if (from.j < to.j) {
+                return Dir::Right;
+            } else if (from.j > to.j) {
+                return Dir::Left;
+            } else { // from.j == to.j
+                return Dir::None;
+            }
+        }
+    }
+
+    inline int score_warrior(const Unit &u) {
+        return min(u.food, u.water) + warriors(u.player).size() / 2 +
+               max(total_score(u.player) - total_score(me()), 0) * 4;
+    }
+
+    Dir find_nearest_enemy(Pos starting_pos) {
+        queue<Pos> bfsq;
+        bfsq.push(starting_pos);
+        set<Pos> visited;
+        visited.insert(starting_pos);
+        Pos nearest;
+        while (not bfsq.empty()) {
+            Pos p = bfsq.front();
+            bfsq.pop();
+            Cell c = cell(p);
+            if (c.type != Desert and c.type != Road) { continue; }
+            if (c.id >= 0 and unit(c.id).player != me() and
+                unit(c.id).type == Warrior) {
+                nearest = p;
+                break;
+            }
+            for (int d = 0; d < DirSize - 1; ++d) {
+                Pos new_p = p + Dir(d);
+                if (pos_ok(new_p) and visited.insert(new_p).second) {
+                    bfsq.push(new_p);
+                }
+            }
+        }
+        return dir_from_pos(starting_pos,
+                            nearest); // TODO: A (bad) cheap approximation
+    }
+
     void init() {
         int r = rows();
         int c = cols();
@@ -242,18 +300,28 @@ private:
         Dir dir;
         if (distance_to_water(pos) >= u.water - 5) {
             dir = nearest_water(pos);
-        } else {
+        } else if (distance_to_nearest_city(pos) >= u.food - 5) {
             dir = nearest_city(pos);
+        } else {
+            dir = Dir(random(0, DirSize - 1));
         }
         pos += dir;
-        if (lock(pos)) { command(id, dir); }
+        if (lock(u.pos)) { command(id, dir); }
     }
 
     void move_car(int id) {
-        Pos pos = unit(id).pos;
-        Dir dir = nearest_station(pos);
-        pos += dir;
-        if (lock(pos)) { command(id, dir); }
+        Unit u = unit(id);
+        Dir dir;
+        if (distance_to_station(u.pos) >= u.food - 5) {
+            dir = nearest_station(u.pos);
+        } else {
+            dir = find_nearest_enemy(u.pos);
+        }
+        if (lock(u.pos + dir)) {
+            command(id, dir);
+        } else if (not lock(u.pos)) {
+            for (int d = 0; (d < DirSize) and not lock(u.pos + Dir(d)); ++d) {}
+        }
     }
 
 public:
@@ -262,7 +330,7 @@ public:
         for (int car : cars(me())) {
             if (can_move(car)) { move_car(car); }
         }
-        if (round() % 4 == me()) {
+        if (round() % number_of_players == me()) {
             recalculate_city_owners();
             for (int warrior : warriors(me())) { move_warrior(warrior); }
         }
