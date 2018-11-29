@@ -1,21 +1,26 @@
 #include "Player.hh"
+#include <functional>
 #include <limits>
 #include <queue>
 #include <set>
 #include <utility>
-#include <functional>
 
 #define PLAYER_NAME Linearithmic
 
 using namespace std;
+
+// NOTE: This is unlikely to defeat Dummy, but I want to test whether it
+// is a good idea to precalculate all distances, and if doing so would
+// exceed Jutge's allowed CPU time and memory usage.
 
 class PLAYER_NAME : public Player {
 private:
     const int infinity = numeric_limits<int>::max();
 
     vector<set<Pos>> city_cells;
-    vector<vector<int>> _nearest_water;
-    vector<vector<int>> _nearest_station;
+    vector<vector<vector<int>>> nearest_city_;
+    vector<vector<int>> nearest_water_;
+    vector<vector<int>> nearest_station_;
 
     vector<int> city_owners;
     vector<bool> city_owner_changed;
@@ -86,11 +91,41 @@ private:
     }
 
     inline void calculate_nearest_water(const set<Pos> &water_cells) {
-        _calculate_nearest(water_cells, _nearest_water, true, 0, 1);
+        _calculate_nearest(water_cells, nearest_water_, true, 0, 2);
     }
 
     inline void calculate_nearest_station(const set<Pos> &station_cells) {
-        _calculate_nearest(station_cells, _nearest_station, false, 3, 0);
+        _calculate_nearest(station_cells, nearest_station_, false, 3, 0);
+    }
+
+    inline void calculate_nearest_city(int city_id) {
+        _calculate_nearest(city_cells[city_id], nearest_city_[city_id], true, 0,
+                           2);
+    }
+
+    inline int _distance_to(Pos from, const vector<vector<int>> &distances) {
+        return distances[from.i][from.j];
+    }
+
+    inline int distance_to_water(Pos from) {
+        return _distance_to(from, nearest_water_);
+    }
+
+    inline int distance_to_station(Pos from) {
+        return _distance_to(from, nearest_station_);
+    }
+
+    inline int distance_to_city(Pos from, int city_id) {
+        return _distance_to(from, nearest_city_[city_id]);
+    }
+
+    inline int distance_to_nearest_city(Pos from) {
+        int current_min = infinity;
+        for (auto c : nearest_city_) {
+            int dist_to_c = _distance_to(from, c);
+            if (dist_to_c < current_min) { current_min = dist_to_c; }
+        }
+        return current_min;
     }
 
     Dir _nearest(Pos from, const vector<vector<int>> &distances) {
@@ -110,11 +145,28 @@ private:
     }
 
     inline Dir nearest_water(Pos from) {
-        return _nearest(from, _nearest_water);
+        return _nearest(from, nearest_water_);
     }
 
     inline Dir nearest_station(Pos from) {
-        return _nearest(from, _nearest_station);
+        return _nearest(from, nearest_station_);
+    }
+
+    inline Dir goto_city(Pos from, int to_id) {
+        return _nearest(from, nearest_city_[to_id]);
+    }
+
+    Dir nearest_city(Pos from) {
+        int current_min = infinity;
+        int current_tgt = -1;
+        for (unsigned int i = 0; i < nearest_city_.size(); ++i) {
+            int dist_to_i = nearest_city_[i][from.i][from.j];
+            if (dist_to_i < current_min) {
+                current_min = dist_to_i;
+                current_tgt = i;
+            }
+        }
+        return (current_tgt == -1) ? None : goto_city(from, current_tgt);
     }
 
     void recalculate_city_owners() {
@@ -169,18 +221,30 @@ private:
                 }
             }
         }
-        _nearest_water = _nearest_station =
+        nearest_water_ = nearest_station_ =
             vector<vector<int>>(r, vector<int>(c, infinity));
+        nearest_city_ = vector<vector<vector<int>>>(
+            city_cells.size(),
+            vector<vector<int>>(r, vector<int>(c, infinity)));
         calculate_nearest_water(water_cells);
         calculate_nearest_station(station_cells);
+        for (unsigned int i = 0; i < nearest_city_.size(); ++i) {
+            calculate_nearest_city(i);
+        }
         cell_locks = vector<vector<int>>(r, vector<int>(c, 0));
         city_owners = vector<int>(city_cells.size());
         city_owner_changed = vector<bool>(city_owners.size());
     }
 
     void move_warrior(int id) {
-        Pos pos = unit(id).pos;
-        Dir dir = nearest_water(pos);
+        Unit u = unit(id);
+        Pos pos = u.pos;
+        Dir dir;
+        if (distance_to_water(pos) >= u.water - 5) {
+            dir = nearest_water(pos);
+        } else {
+            dir = nearest_city(pos);
+        }
         pos += dir;
         if (lock(pos)) { command(id, dir); }
     }
@@ -191,7 +255,6 @@ private:
         pos += dir;
         if (lock(pos)) { command(id, dir); }
     }
-
 
 public:
     void play() {
