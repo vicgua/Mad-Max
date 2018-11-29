@@ -1,0 +1,11 @@
+--- Original
++++ Patched
+@@ -42,7 +42,7 @@
+       else { // Otherwise, ...
+         bool city = false;
+         for (int k = 0; not city and k < 8; ++k) {
+-          Pos p = unit(id).pos;
++          Pos p = unit(id).pos + Dir(k);
+           if (pos_ok(p) and cell(p).type == City) { // if we are next to a city cell, we try to move there.
+             city = true;
+             command(id, Dir(k));
