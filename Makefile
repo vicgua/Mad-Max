@@ -31,6 +31,7 @@ PROFILE  = 1 # Compile for profile (0 or 1)
 
 PLAYERS_SRC = $(wildcard AI*.cc)
 PLAYERS_OBJ = $(patsubst %.cc, %.o, $(PLAYERS_SRC)) $(EXTRA_OBJS) $(DUMMY_OBJ)
+PLAYERS_SHARE_OBJ = $(patsubst %.o, %.share.o, $(PLAYERS_OBJ))
 
 # Flags
 

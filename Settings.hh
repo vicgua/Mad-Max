@@ -44,7 +44,7 @@ public:
    * Returns a string with the game name and version.
    */
   inline static string version () {
-    return "Mad_Max 1.6";
+    return "Mad_Max 1.5";
   }
 
   /**
