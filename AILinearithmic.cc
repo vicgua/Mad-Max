@@ -2,7 +2,7 @@
 #include <limits>
 #include <queue>
 #include <set>
-#include <unordered_map>
+#include <map>
 #include <utility>
 
 #define PLAYER_NAME Linearithmic
@@ -14,13 +14,14 @@ private:
     const int infinity = numeric_limits<int>::max();
     const int negative_infinity = numeric_limits<int>::min();
     const int number_of_players = 4;
+    const unsigned int sentinels_per_city = 2;
 
     struct WarriorInfo {
         int city = -1;
-        enum Role { Invader, TakingOver };
+        enum Role { Invader, TakingOver, Sentinel };
         Role role = Invader;
     };
-    unordered_map<int, WarriorInfo> warrior_info;
+    map<int, WarriorInfo> warrior_info;
 
     vector<set<Pos>> city_cells;
     vector<vector<vector<int>>> nearest_city_;
@@ -31,6 +32,7 @@ private:
     vector<bool> city_owner_changed;
     vector<int> city_count;
     vector<unsigned int> assigned_warriors;
+    vector<unsigned int> assigned_sentinels;
 
     /** A vector containing the locked cells.
      * A lock is valid until the round marked by this vector (not included).
@@ -59,6 +61,16 @@ private:
     inline bool is_locked(int x, int y) { return cell_locks[x][y] > round(); }
 
     inline bool is_locked(Pos p) { return is_locked(p.i, p.j); }
+
+    vector<Dir> random_dirs(bool include_none = false) {
+        int upper_bound = include_none ? DirSize : (DirSize - 1);
+        vector<Dir> ret(upper_bound);
+        vector<int> rand_perm = random_permutation(upper_bound);
+        for (unsigned int i = 0; i < ret.size(); ++i) {
+            ret[i] = Dir(rand_perm[i]);
+        }
+        return ret;
+    }
 
     void _calculate_nearest(const set<Pos> &cells,
                             vector<vector<int>> &dist_matrix,
@@ -313,12 +325,17 @@ private:
         city_owners = vector<int>(city_cells.size());
         city_owner_changed = vector<bool>(city_owners.size(), -1);
         city_count = vector<int>(number_of_players, 0);
-        assigned_warriors = vector<unsigned int>(city_owners.size(), 0);
+        assigned_warriors = assigned_sentinels = vector<unsigned int>(city_owners.size(), 0);
     }
 
     inline int score_city(Pos pos, int city_id) {
         int owner = city_owners[city_id];
-        if (owner == me()) { return negative_infinity; }
+        if (owner == me()) {
+            if ((assigned_sentinels[city_id] + assigned_warriors[city_id]) < sentinels_per_city) {
+                return 100 - distance_to_city(pos, city_id);
+            }
+            return negative_infinity;
+        }
         if (assigned_warriors[city_id] >= city_cells[city_id].size() / 3) {
             return (-distance_to_city(pos, city_id) * 3) / 2;
         }
@@ -331,25 +348,72 @@ private:
         Dir dir;
         if (distance_to_water(u.pos) >= u.water - 10) {
             if (info.city >= 0) {
-                --assigned_warriors[info.city];
+                if (info.role == WarriorInfo::Invader or info.role == WarriorInfo::TakingOver) {
+                    --assigned_warriors[info.city];
+                } else if (info.role == WarriorInfo::Sentinel) {
+                    --assigned_sentinels[info.city];
+                }
                 info.city = -1;
             }
 
             dir = nearest_water(u.pos);
         } else if (distance_to_nearest_city(u.pos) >= u.food - 10) {
             if (info.city >= 0) {
-                --assigned_warriors[info.city];
+                if (info.role == WarriorInfo::Invader or info.role == WarriorInfo::TakingOver) {
+                    --assigned_warriors[info.city];
+                } else if (info.role == WarriorInfo::Sentinel) {
+                    --assigned_sentinels[info.city];
+                }
                 info.city = -1;
             }
             dir = nearest_city(u.pos);
         } else if (info.role == WarriorInfo::Invader and info.city >= 0 and
                    not city_owner_changed[info.city]) {
             if (distance_to_city(u.pos, info.city) == 0) {
-                info.role = WarriorInfo::TakingOver;
+                if (city_owners[info.city] == me()) {
+                    info.role = WarriorInfo::Sentinel;
+                } else {
+                    info.role = WarriorInfo::TakingOver;
+                }
                 move_warrior(id, info);
                 return;
             }
             dir = goto_city(u.pos, info.city);
+        } else if (info.role == WarriorInfo::TakingOver) {
+            if (city_owners[info.city] == me()) {
+                --assigned_warriors[info.city];
+                if (assigned_sentinels[info.city] < sentinels_per_city) {
+                    info.role = WarriorInfo::Sentinel;
+                    ++assigned_sentinels[info.city];
+                } else {
+                    info.role = WarriorInfo::Invader;
+                    info.city = -1;
+                }
+                move_warrior(id, info);
+                return;
+            }
+            dir = None;
+            for (Dir d : random_dirs()) {
+                if (city_cells[info.city].count(u.pos + d)) {
+                    dir = d;
+                    break;
+                }
+            }
+        } else if (info.role == WarriorInfo::Sentinel) {
+            if (city_owners[info.city] != me()) {
+                --assigned_sentinels[info.city];
+                info.role = WarriorInfo::Invader;
+                info.city = -1;
+                move_warrior(id, info);
+                return;
+            }
+            dir = None;
+            for (Dir d : random_dirs()) {
+                if (city_cells[info.city].count(u.pos + d)) {
+                    dir = d;
+                    break;
+                }
+            }
         } else {
             int best_city = -1;
             int best_score = negative_infinity;
@@ -404,6 +468,31 @@ private:
         }
     }
 
+    void collect_dead_warriors() {
+        const vector<int> &my_warriors = warriors(me());
+        auto actual = my_warriors.begin();
+        auto stored = warrior_info.begin();
+        while (actual != my_warriors.end() and stored != warrior_info.end()) {
+            if (*actual < stored->first) {
+                ++actual;
+            } else if (*actual > stored->first) {
+                WarriorInfo &info = stored->second;
+                if (info.city != -1 and (info.role == WarriorInfo::Invader or info.role == WarriorInfo::TakingOver)) {
+                    --assigned_warriors[info.city];
+                } else if (info.city != -1 and info.role == WarriorInfo::Sentinel) {
+                    --assigned_sentinels[info.city];
+                }
+                stored = warrior_info.erase(stored);
+            } else {
+                ++actual;
+                ++stored;
+            }
+        }
+        if (stored != warrior_info.end()) {
+            warrior_info.erase(stored, warrior_info.end());
+        }
+    }
+
 public:
     void play() {
         if (round() == 0) { init(); }
@@ -412,6 +501,7 @@ public:
         }
         if (round() % number_of_players == me()) {
             recalculate_city_owners();
+            collect_dead_warriors();
             for (int warrior : warriors(me())) { move_warrior(warrior); }
         }
     }
