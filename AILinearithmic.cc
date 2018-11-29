@@ -3,6 +3,7 @@
 #include <queue>
 #include <set>
 #include <utility>
+#include <functional>
 
 #define PLAYER_NAME Linearithmic
 
@@ -10,11 +11,9 @@ using namespace std;
 
 class PLAYER_NAME : public Player {
 private:
-    set<Pos> water_cells;
-    set<Pos> station_cells;
-
     const int infinity = numeric_limits<int>::max();
 
+    vector<set<Pos>> city_cells;
     vector<vector<int>> _nearest_water;
     vector<vector<int>> _nearest_station;
 
@@ -86,11 +85,11 @@ private:
         }
     }
 
-    inline void calculate_nearest_water() {
+    inline void calculate_nearest_water(const set<Pos> &water_cells) {
         _calculate_nearest(water_cells, _nearest_water, true, 0, 1);
     }
 
-    inline void calculate_nearest_station() {
+    inline void calculate_nearest_station(const set<Pos> &station_cells) {
         _calculate_nearest(station_cells, _nearest_station, false, 3, 0);
     }
 
@@ -119,17 +118,64 @@ private:
     }
 
     void recalculate_city_owners() {
-        const vector<vector<Pos>> cit(cities());
-        vector<bool> changed(cit.size(), false);
-        for (unsigned int c = 0; c < cit.size(); ++c) {
-            int old_owner = city_owners[c];
-            int new_owner = cell(cit[c][0]).owner;
-            if (old_owner != new_owner) {
-                city_owners[c] = new_owner;
-                changed[c] = true;
-            }
+        vector<bool> changed(city_owner_changed.size(), false);
+        for (unsigned int i = 0; i < city_cells.size(); ++i) {
+            int old_owner = city_owners[i];
+            int new_owner = cell(*(city_cells[i].begin())).owner;
+            city_owners[i] = new_owner;
+            changed[i] = old_owner != new_owner;
         }
         city_owner_changed = move(changed);
+    }
+
+    void add_city_cell(vector<vector<int>> &city_map, Pos pos) {
+        for (int d = 0; d < DirSize - 1; ++d) {
+            Pos possible_pos = pos + Dir(d);
+            if (not pos_ok(possible_pos)) { continue; }
+            int possible_city = city_map[possible_pos.i][possible_pos.j];
+            if (possible_city >= 0) {
+                city_map[pos.i][pos.j] = possible_city;
+                city_cells[possible_city].insert(pos);
+                return;
+            }
+        }
+        int new_city_id = city_cells.size();
+        city_map[pos.i][pos.j] = new_city_id;
+        set<Pos> new_city{pos};
+        city_cells.push_back(move(new_city));
+    }
+
+    void init() {
+        int r = rows();
+        int c = cols();
+        vector<vector<int>> city_map(r, vector<int>(c, -1));
+        set<Pos> water_cells;
+        set<Pos> station_cells;
+        for (int i = 0; i < r; ++i) {
+            for (int j = 0; j < c; ++j) {
+                Cell c = cell(i, j);
+                switch (c.type) {
+                    case City:
+                        add_city_cell(city_map, Pos(i, j));
+                        break;
+                    case Station:
+                        station_cells.insert(Pos(i, j));
+                        break;
+                    case Water:
+                        water_cells.insert(Pos(i, j));
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        _nearest_water = _nearest_station =
+            vector<vector<int>>(r, vector<int>(c, infinity));
+        calculate_nearest_water(water_cells);
+        calculate_nearest_station(station_cells);
+        cell_locks = vector<vector<int>>(r, vector<int>(c, 0));
+        city_owners = vector<int>(city_cells.size());
+        city_owner_changed = vector<bool>(city_owners.size());
     }
 
     void move_warrior(int id) {
@@ -146,27 +192,6 @@ private:
         if (lock(pos)) { command(id, dir); }
     }
 
-    void init() {
-        int r = rows();
-        int c = cols();
-        for (int i = 0; i < r; ++i) {
-            for (int j = 0; j < c; ++j) {
-                Cell c = cell(i, j);
-                if (c.type == Water) {
-                    water_cells.insert(Pos(i, j));
-                } else if (c.type == Station) {
-                    station_cells.insert(Pos(i, j));
-                }
-            }
-        }
-        _nearest_water = _nearest_station =
-            vector<vector<int>>(r, vector<int>(c, infinity));
-        calculate_nearest_water();
-        calculate_nearest_station();
-        cell_locks = vector<vector<int>>(r, vector<int>(c, 0));
-        city_owners = vector<int>(cities().size());
-        city_owner_changed = vector<bool>(city_owners.size());
-    }
 
 public:
     void play() {
