@@ -18,7 +18,7 @@ private:
 
     struct WarriorInfo {
         int city = -1;
-        enum Role { Invader, TakingOver, Sentinel };
+        enum Role { Invader, TakingOver, Sentinel, Starving, Dehydrated };
         Role role = Invader;
     };
     map<int, WarriorInfo> warrior_info;
@@ -343,6 +343,7 @@ private:
                distance_to_city(pos, city_id);
     }
 
+#if 0
     void move_warrior(int id, WarriorInfo &info) {
         Unit u = unit(id);
         Dir dir;
@@ -441,6 +442,30 @@ private:
             if (d == DirSize) {
                 cerr << "Warrior " << id << " is doomed!" << endl;
             }
+        }
+    }
+#endif
+    void move_warrior(int id, WarriorInfo &info) {
+        Unit u = unit(id);
+        switch (info.role) {
+            case WarriorInfo::Starving:
+                // TODO
+                break;
+            case WarriorInfo::Dehydrated:
+                // TODO
+                break;
+            case WarriorInfo::Invader:
+                // TODO
+                break;
+            case WarriorInfo::TakingOver:
+                if (u.water < distance_to_water(u.pos) + 5) {
+                    info.role = WarriorInfo::Dehydrated;
+                    return move_warrior(id, info);
+                }
+                break;
+            case WarriorInfo::Sentinel:
+                // TODO
+                break;
         }
     }
 
