@@ -298,36 +298,29 @@ private:
     }
 
     inline int score_warrior(const Unit &u) {
-        return min(u.food, u.water) + warriors(u.player).size() / 2 +
-               max(total_score(u.player) - total_score(me()), 0) * 4;
+        if (u.type == Car) { return -10000; }
+        return 10 + (min(u.food, u.water) + warriors(u.player).size() / 2 +
+                     max(total_score(u.player) - total_score(me()), 0) * 4);
     }
 
-    Dir find_nearest_enemy(Pos starting_pos) {
-        // TODO: Dijkstra
-        queue<Pos> bfsq;
-        bfsq.push(starting_pos);
-        set<Pos> visited;
-        visited.insert(starting_pos);
-        Pos nearest;
-        while (not bfsq.empty()) {
-            Pos p = bfsq.front();
-            bfsq.pop();
-            Cell c = cell(p);
-            if (c.type != Desert and c.type != Road) { continue; }
-            if (c.id >= 0 and unit(c.id).player != me() and
-                unit(c.id).type == Warrior) {
-                nearest = p;
-                break;
-            }
-            for (int d = 0; d < DirSize - 1; ++d) {
-                Pos new_p = p + Dir(d);
-                if (pos_ok(new_p) and visited.insert(new_p).second) {
-                    bfsq.push(new_p);
-                }
-            }
-        }
-        return dir_from_pos(starting_pos,
-                            nearest); // A (bad) cheap approximation
+    inline Pos compute_real_pos(Pos origin_real, Pos origin, Pos offset) {
+        return origin_real + Pos(offset.i - origin.i, offset.j - origin.j);
+    }
+
+    inline Pos compute_offset_pos(Pos origin_real, Pos origin, Pos real_pos) {
+        return origin +
+               Pos(real_pos.i - origin_real.i, real_pos.j - origin_real.j);
+    }
+
+    Dir find_nearest_enemy(Pos start_pos, int limit = 4) {
+        // To be able to use Dijkstra easily and quickly, we will associate each
+        // Pos with a position in the distance and visited vectors.
+        int matrix_size = 2 * limit + 1;
+        Pos origin(limit + 1, limit + 1);
+        vector<vector<int>> score(matrix_size,
+                                  vector<int>(matrix_size, negative_infinity));
+        score[origin.i][origin.j] = 0;
+        // Algorithm IDEA: Convert to Minimum(/Maximum) Spanning Tree and find best path with DFS. 
     }
 
     void init() {

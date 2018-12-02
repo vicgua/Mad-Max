@@ -18,7 +18,7 @@ STATUS=$?
 
 # Cleanup
 rm pipe
-if [ $(wc -c < debug.log) > 0 ]; then
+if [ $(wc -c < debug.log) -gt 0 ]; then
     echo 'debug: Debug log generated' > /dev/stderr
 else
     rm debug.log
