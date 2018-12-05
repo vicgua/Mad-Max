@@ -15,6 +15,7 @@ private:
     const int negative_infinity = numeric_limits<int>::min();
     const int number_of_players = 4;
     const unsigned int sentinels_per_city = 2;
+    const int look_around_limit = 3;
 
     struct WarriorInfo {
         int city = -1;
@@ -95,21 +96,11 @@ private:
 
     inline bool lock(Pos p) { return lock(p.i, p.j); }
 
-    vector<Dir> random_dirs(bool include_none = false) {
-        int upper_bound = include_none ? DirSize : (DirSize - 1);
-        vector<Dir> ret(upper_bound);
-        vector<int> rand_perm = random_permutation(upper_bound);
-        for (unsigned int i = 0; i < ret.size(); ++i) {
-            ret[i] = Dir(rand_perm[i]);
-        }
-        return ret;
-    }
-
     Dir lock_or_escape(Pos p, Dir preferred_dir) {
         if (lock(p + preferred_dir)) { return preferred_dir; }
         if (lock(p)) { return None; }
-        for (Dir d : random_dirs()) {
-            if (lock(p + d)) { return d; }
+        for (int d : random_permutation(DirSize - 1)) {
+            if (lock(p + Dir(d))) { return Dir(d); }
         }
         return None;
     }
@@ -196,8 +187,7 @@ private:
         return current_min;
     }
 
-    Dir _nearest(Pos from, const vector<vector<int>> neighbourhood, const vector<vector<int>> &distances) {
-        // TODO: Fix to use neighbourhood
+    Dir _nearest(Pos from, const vector<vector<int>> &distances) {
         int current_min = distances[from.i][from.j];
         Dir current_dir = None;
         vector<int> directions(random_permutation(DirSize - 1));
@@ -213,20 +203,19 @@ private:
         return current_dir;
     }
 
-    inline Dir nearest_water(Pos from, const vector<vector<int>> neighbourhood) {
-        return _nearest(from, nearest_water_, neighbourhood);
+    inline Dir nearest_water(Pos from) {
+        return _nearest(from, nearest_water_);
     }
 
-    inline Dir nearest_station(Pos from, const vector<vector<int>> neighbourhood) {
-        return _nearest(from, nearest_station_, neighbourhood);
+    inline Dir nearest_station(Pos from) {
+        return _nearest(from, nearest_station_);
     }
 
-    inline Dir goto_city(Pos from, int to_id, const vector<vector<int>> neighbourhood) {
-        return _nearest(from, nearest_city_[to_id], neighbourhood);
+    inline Dir goto_city(Pos from, int to_id) {
+        return _nearest(from, nearest_city_[to_id]);
     }
 
-    Dir nearest_city(Pos from, const vector<vector<int>> &neighbourhood) {
-        // TODO: Fix to use neighbourhood
+    Dir nearest_city(Pos from) {
         int current_min = infinity;
         int current_tgt = -1;
         for (unsigned int i = 0; i < nearest_city_.size(); ++i) {
@@ -395,7 +384,7 @@ private:
     Dir find_enemy_in_city(Pos start_pos, int limit) {
         queue<pair<Pos, int>> bfsq;
         bfsq.push({start_pos, 0});
-        vector<Dir> directions = random_dirs();
+        vector<int> directions = random_permutation(DirSize - 1);
         Pos preferred_pos = start_pos;
         Dir preferred_dir = None;
         while (not bfsq.empty()) {
@@ -412,15 +401,15 @@ private:
                 preferred_pos = current_pos;
                 break;
             }
-            for (Dir d : directions) {
-                bfsq.push({current_pos + d, current_dist + 1});
+            for (int d : directions) {
+                bfsq.push({current_pos + Dir(d), current_dist + 1});
             }
         }
         preferred_dir = dir_from_pos(start_pos, preferred_pos);
         if (preferred_dir == None) {
-            for (Dir d : directions) {
-                if (cell(start_pos + d).type == City) {
-                    preferred_dir = d;
+            for (int d : directions) {
+                if (cell(start_pos + Dir(d)).type == City) {
+                    preferred_dir = Dir(d);
                     break;
                 }
             }
@@ -429,13 +418,13 @@ private:
     }
 
     vector<vector<int>> look_around(Unit u) {
-        constexpr int look_around_limit = 3;
         vector<vector<int>> neighbourhood(look_around_limit,
                                           vector<int>(look_around_limit, 0));
         Pos start_pos = u.pos;
         for (int i = 0; i < look_around_limit; ++i) {
-            for (int j = 0; j < look_around_limit; ++i) {
+            for (int j = 0; j < look_around_limit; ++j) {
                 Pos curr_pos = start_pos + Pos(i, j);
+                if (not pos_ok(curr_pos)) { continue; }
                 Cell c = cell(curr_pos);
                 if (c.id == -1) { continue; }
                 Unit u_in_cell = unit(c.id);
@@ -451,8 +440,32 @@ private:
         return neighbourhood;
     }
 
+    /// Adds weight to a given direction in the neighbourhood map
+    inline void weight_dir(vector<vector<int>> &neighbourhood, Dir preferred_dir, int bonus = 10) {
+        Pos origin(look_around_limit / 2, look_around_limit / 2);
+        Pos bonus_pos = origin + preferred_dir;
+        neighbourhood[bonus_pos.i][bonus_pos.j] += bonus;
+    }
+
+    /// Gets the best direction for the current round, taking into account the best
+    /// overall direction, and nearby cells
+    Dir best_immediate_dir(const vector<vector<int>> &neighbourhood) {
+        Pos origin(look_around_limit / 2, look_around_limit / 2);
+        int best_weight = neighbourhood[origin.i][origin.j];
+        Dir best_dir = None;
+        for (int d : random_permutation(DirSize - 1)) {
+            Pos curr_pos = origin + Dir(d);
+            if (best_weight < neighbourhood[curr_pos.i][curr_pos.j]) {
+                best_weight = neighbourhood[curr_pos.i][curr_pos.j];
+                best_dir = Dir(d);
+            }
+        }
+        return best_dir;
+    }
+
     inline bool check_water(const Unit &u, WarriorInfo &info,
                             unsigned int &assigned_to) {
+        if (u.water >= 3 * warriors_health() / 4) { return false; }
         if (u.water < distance_to_water(u.pos) + 6) {
             info.role = WarriorInfo::Dehydrated;
             --assigned_to;
@@ -463,6 +476,7 @@ private:
 
     inline bool check_food(const Unit &u, WarriorInfo &info,
                            unsigned int &assigned_to) {
+        if (u.food >= 3 * warriors_health() / 4) { return false; }
         if (u.food < distance_to_nearest_city(u.pos) + 6) {
             info.role = WarriorInfo::Starving;
             --assigned_to;
@@ -482,7 +496,8 @@ private:
                     return move_warrior(id, info);
                 }
                 vector<vector<int>> neighbourhood = move(look_around(u));
-                dir = nearest_city(u.pos);
+                weight_dir(neighbourhood, nearest_city(u.pos));
+                dir = best_immediate_dir(neighbourhood);
                 break;
             }
             case WarriorInfo::Dehydrated: {
@@ -492,7 +507,8 @@ private:
                     return move_warrior(id, info);
                 }
                 vector<vector<int>> neighbourhood = look_around(u);
-                dir = nearest_water(u.pos);
+                weight_dir(neighbourhood, nearest_water(u.pos));
+                dir = best_immediate_dir(neighbourhood);
                 break;
             }
             case WarriorInfo::Invader: {
@@ -517,7 +533,8 @@ private:
                     info.role = WarriorInfo::TakingOver;
                     return move_warrior(id, info);
                 }
-                dir = goto_city(u.pos, info.city);
+                weight_dir(neighbourhood, goto_city(u.pos, info.city));
+                dir = best_immediate_dir(neighbourhood);
                 break;
             }
             case WarriorInfo::TakingOver:
