@@ -416,24 +416,47 @@ private:
         return preferred_dir;
     }
 
+    inline bool look_around_ok(int i, int j) {
+        return i >= 0 and i < look_around_limit and j >= 0 and
+               j < look_around_limit;
+    }
+    inline bool look_around_ok(Pos p) { return look_around_ok(p.i, p.j); }
+
     vector<vector<int>> look_around(Unit u) {
         vector<vector<int>> neighbourhood(look_around_limit,
                                           vector<int>(look_around_limit, 0));
         Pos start_pos = u.pos;
-        for (int i = 0; i < look_around_limit; ++i) {
-            for (int j = 0; j < look_around_limit; ++j) {
-                Pos curr_pos = start_pos + Pos(i, j);
+        for (int i = -1; i < look_around_limit + 1; ++i) {
+            for (int j = -1; j < look_around_limit + 1; ++j) {
+                Pos curr_pos = start_pos + Pos(i - look_around_limit / 2,
+                                               j - look_around_limit / 2);
                 if (not pos_ok(curr_pos)) { continue; }
                 Cell c = cell(curr_pos);
                 if (c.id == -1) { continue; }
                 Unit u_in_cell = unit(c.id);
                 if (u_in_cell.player == me()) { continue; }
                 if (u_in_cell.type == Car) {
-                    neighbourhood[i][j] -= 1000;
-                    // TODO: Propagate to near cells
+                    if (look_around_ok(i, j)) { neighbourhood[i][j] -= 1000; }
+                    for (int d = 0; d < DirSize - 1; ++d) {
+                        // Propagate to near cells
+                        Pos pp = Pos(i, j) + Dir(d);
+                        if (look_around_ok(pp)) {
+                            neighbourhood[pp.i][pp.j] -= 100;
+                        }
+                    }
+                } else {
+                    int score = min(3 * u_in_cell.food - 2 * u.food,
+                                    3 * u_in_cell.water - 2 * u.water);
+                    if (look_around_ok(i, j)) { neighbourhood[i][j] += score; }
+                    if (score < 0) {
+                        for (int d = 0; d < DirSize - 1; ++d) {
+                            Pos pp = Pos(i, j) + Dir(d);
+                            if (look_around_ok(pp)) {
+                                neighbourhood[pp.i][pp.j] += score / 10;
+                            }
+                        }
+                    }
                 }
-                neighbourhood[i][j] +=
-                    min(u_in_cell.food - u.food, u_in_cell.water - u.water);
             }
         }
         return neighbourhood;
