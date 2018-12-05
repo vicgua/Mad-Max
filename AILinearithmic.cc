@@ -5,7 +5,7 @@
 #include <set>
 #include <utility>
 
-#define PLAYER_NAME Linearithmic
+#define PLAYER_NAME Linearithm_1
 
 using namespace std;
 
@@ -294,8 +294,8 @@ private:
     }
 
     Dir find_nearest_enemy(Pos start_pos) {
-        // Algorithm IDEA: Convert to Minimum(/Maximum) Spanning Tree and find
-        // best path with DFS.
+        // Algorithm IDEA: Dijkstra with two "distances": real
+        // distances+maluses (e.g. enemy cars) and bonuses (e.g. enemy warriors)
         queue<Pos> bfsq;
         bfsq.push(start_pos);
         set<Pos> visited;
@@ -423,6 +423,8 @@ private:
     inline bool look_around_ok(Pos p) { return look_around_ok(p.i, p.j); }
 
     vector<vector<int>> look_around(Unit u) {
+        // Algorithm IDEA: DFS with increasing distance from origin in all
+        // directions
         vector<vector<int>> neighbourhood(look_around_limit,
                                           vector<int>(look_around_limit, 0));
         Pos start_pos = u.pos;
@@ -445,8 +447,10 @@ private:
                         }
                     }
                 } else {
-                    int score = min(3 * u_in_cell.food - 2 * u.food,
-                                    3 * u_in_cell.water - 2 * u.water);
+                    // int score = min(3 * u_in_cell.food - 2 * u.food,
+                    // 3 * u_in_cell.water - 2 * u.water);
+                    int score = min(3 * u.food - 2 * u_in_cell.food,
+                                    3 * u.water - 2 * u_in_cell.water);
                     if (look_around_ok(i, j)) { neighbourhood[i][j] += score; }
                     if (score < 0) {
                         for (int d = 0; d < DirSize - 1; ++d) {
@@ -487,8 +491,8 @@ private:
     }
 
     inline bool check_water(const Unit &u, WarriorInfo &info,
-                            unsigned int &assigned_to) {
-        if (u.water < distance_to_water(u.pos) + 6) {
+                            unsigned int &assigned_to, int extra_supplies = 6) {
+        if (u.water < distance_to_water(u.pos) + extra_supplies) {
             info.role = WarriorInfo::Dehydrated;
             --assigned_to;
             return true;
@@ -497,8 +501,8 @@ private:
     }
 
     inline bool check_food(const Unit &u, WarriorInfo &info,
-                           unsigned int &assigned_to) {
-        if (u.food < distance_to_nearest_city(u.pos) + 6) {
+                           unsigned int &assigned_to, int extra_supplies = 6) {
+        if (u.food < distance_to_nearest_city(u.pos) + extra_supplies) {
             info.role = WarriorInfo::Starving;
             --assigned_to;
             return true;
@@ -533,8 +537,6 @@ private:
                 break;
             }
             case WarriorInfo::Invader: {
-                if (check_water(u, info, assigned_warriors[info.city]))
-                    return move_warrior(id, info);
                 if (info.city == -1 or city_owner_changed[info.city]) {
                     int current_max = negative_infinity;
                     int best_city = 0;
@@ -546,6 +548,11 @@ private:
                             best_city = city;
                         }
                     }
+                    if (check_water(u, info, assigned_warriors[info.city]))
+                        return move_warrior(id, info);
+                    if (check_food(u, info, assigned_warriors[info.city]))
+                        // CHECK: Maybe this check improves or worsens results.
+                        return move_warrior(id, info);
                     info.city = best_city;
                     ++assigned_warriors[info.city];
                 }
