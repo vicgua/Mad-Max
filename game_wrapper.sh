@@ -12,13 +12,13 @@ fi
 ./Game $* 2> pipe &
 GAME_PID=$!
 # Duplicate pipe content to STDERR and to debug.log, filtering "info:" messages
-tee /dev/stderr < pipe | grep -v '^info:' > debug.log
+tee /dev/stderr < pipe > full.log
 wait $GAME_PID
 STATUS=$?
 
 # Cleanup
 rm pipe
-if [ $(wc -c < debug.log) -gt 0 ]; then
+if grep -v '^info:' full.log > debug.log; then
     echo 'debug: Debug log generated' > /dev/stderr
 else
     rm debug.log
