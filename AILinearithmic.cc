@@ -107,8 +107,8 @@ private:
 
     void _calculate_nearest(const set<Pos> &cells,
                             vector<vector<int>> &dist_matrix,
-                            const bool can_pass_city, const int desert_penalty,
-                            const int road_penalty) {
+                            const bool can_pass_city,
+                            const int desert_penalty) {
         queue<Pos> bfsq;
         for (auto pos : cells) {
             dist_matrix[pos.i][pos.j] = 0;
@@ -134,7 +134,6 @@ private:
                         new_dist += desert_penalty;
                         break;
                     case Road:
-                        new_dist += road_penalty;
                         break;
                     default:
                         // TODO: Assert unreachable
@@ -149,17 +148,17 @@ private:
     }
 
     inline void calculate_nearest_water(const set<Pos> &water_cells) {
-        _calculate_nearest(water_cells, nearest_water_, true, 0, 5);
+        _calculate_nearest(water_cells, nearest_water_, true, 0);
     }
 
     inline void calculate_nearest_station(const set<Pos> &station_cells) {
         _calculate_nearest(station_cells, nearest_station_, false,
-                           number_of_players - 1, 0);
+                           number_of_players - 1);
     }
 
     inline void calculate_nearest_city(int city_id) {
-        _calculate_nearest(city_cells[city_id], nearest_city_[city_id], true, 0,
-                           5);
+        _calculate_nearest(city_cells[city_id], nearest_city_[city_id], true,
+                           0);
     }
 
     inline int _distance_to(Pos from, const vector<vector<int>> &distances) {
@@ -441,14 +440,15 @@ private:
     }
 
     /// Adds weight to a given direction in the neighbourhood map
-    inline void weight_dir(vector<vector<int>> &neighbourhood, Dir preferred_dir, int bonus = 10) {
+    inline void weight_dir(vector<vector<int>> &neighbourhood,
+                           Dir preferred_dir, int bonus = 10) {
         Pos origin(look_around_limit / 2, look_around_limit / 2);
         Pos bonus_pos = origin + preferred_dir;
         neighbourhood[bonus_pos.i][bonus_pos.j] += bonus;
     }
 
-    /// Gets the best direction for the current round, taking into account the best
-    /// overall direction, and nearby cells
+    /// Gets the best direction for the current round, taking into account the
+    /// best overall direction, and nearby cells
     Dir best_immediate_dir(const vector<vector<int>> &neighbourhood) {
         Pos origin(look_around_limit / 2, look_around_limit / 2);
         int best_weight = neighbourhood[origin.i][origin.j];
@@ -465,7 +465,6 @@ private:
 
     inline bool check_water(const Unit &u, WarriorInfo &info,
                             unsigned int &assigned_to) {
-        if (u.water >= 3 * warriors_health() / 4) { return false; }
         if (u.water < distance_to_water(u.pos) + 6) {
             info.role = WarriorInfo::Dehydrated;
             --assigned_to;
@@ -476,7 +475,6 @@ private:
 
     inline bool check_food(const Unit &u, WarriorInfo &info,
                            unsigned int &assigned_to) {
-        if (u.food >= 3 * warriors_health() / 4) { return false; }
         if (u.food < distance_to_nearest_city(u.pos) + 6) {
             info.role = WarriorInfo::Starving;
             --assigned_to;
