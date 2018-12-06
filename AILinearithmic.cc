@@ -1,4 +1,5 @@
 #include "Player.hh"
+#include <array>
 #include <limits>
 #include <map>
 #include <queue>
@@ -17,7 +18,7 @@ private:
     const unsigned int sentinels_per_city = 2;
     const int look_around_limit = 3;
 
-    using Neighbourhood = vector<int>;
+    using Neighbourhood = array<int, DirSize>;
 
     struct WarriorInfo {
         int city = -1;
@@ -294,32 +295,72 @@ private:
     }
 
     Dir find_nearest_enemy(Pos start_pos) {
-        // Algorithm IDEA: Dijkstra with two "distances": real
-        // distances+maluses (e.g. enemy cars) and bonuses (e.g. enemy warriors)
-        queue<Pos> bfsq;
-        bfsq.push(start_pos);
+        using Dijkstra_tuple = tuple<int, // bonus (>= 0)
+                                     int, // -distance (<= 0)
+                                     Pos  // Position
+                                     >;
+        priority_queue<Dijkstra_tuple> dpq;
+        dpq.push({0, 0, start_pos});
         set<Pos> visited;
-        visited.insert(start_pos);
-        Pos nearest;
-        while (not bfsq.empty()) {
-            Pos p = bfsq.front();
-            bfsq.pop();
-            Cell c = cell(p);
-            if (c.type != Desert and c.type != Road) { continue; }
-            if (c.id >= 0 and unit(c.id).player != me() and
-                unit(c.id).type == Warrior) {
-                nearest = p;
-                break;
+        map<Pos, int> dist;
+        dist[start_pos] = 0;
+        map<Pos, pair<Pos, Dir>> prev;
+        prev[start_pos] = {start_pos, None};
+        bool found_enemy = false;
+        Pos enemy_pos;
+        while (not found_enemy and not dpq.empty() and visited.size() < 1000) {
+            int bonus = get<0>(dpq.top());
+            int distance = get<1>(dpq.top());
+            Pos curr_pos = get<2>(dpq.top());
+            dpq.pop();
+            if (not visited.insert(curr_pos).second) { continue; }
+            Cell c = cell(curr_pos);
+            switch (c.type) {
+                case Desert:
+                    distance -= 4;
+                    break;
+                case Road:
+                    distance -= 1;
+                    break;
+                default:
+                    continue;
             }
+
+            if (c.id >= 0) {
+                Unit u = unit(c.id);
+                if (u.player != me()) {
+                    if (u.type == Car) { continue; }
+                    found_enemy = true;
+                    enemy_pos = curr_pos;
+                    bonus += score_warrior(u);
+                }
+            }
+
             for (int d = 0; d < DirSize - 1; ++d) {
-                Pos new_p = p + Dir(d);
-                if (pos_ok(new_p) and visited.insert(new_p).second) {
-                    bfsq.push(new_p);
+                Pos next_p = curr_pos + Dir(d);
+                if (not pos_ok(next_p)) { continue; }
+                auto it = dist.find(next_p);
+                if (it == dist.end()) {
+                    dist[next_p] = distance;
+                    prev[next_p] = {curr_pos, Dir(d)};
+                    dpq.push({bonus, distance, next_p});
+                } else if (it->second < distance) {
+                    it->second = distance;
+                    prev[next_p] = {curr_pos, Dir(d)};
+                    dpq.push({bonus, distance, next_p});
                 }
             }
         }
-        return dir_from_pos(start_pos,
-                            nearest); // A (bad) cheap approximation
+
+        if (not found_enemy) { return None; }
+        Pos path_pos = enemy_pos;
+        Dir path_dir = None;
+        while (path_pos != start_pos) {
+            auto path_p = prev[path_pos];
+            path_pos = path_p.first;
+            path_dir = path_p.second;
+        }
+        return path_dir;
     }
 
     void init() {
@@ -461,12 +502,13 @@ private:
     }
 
     Neighbourhood look_around(Unit u) {
-        Neighbourhood neighbourhood(DirSize, 0);
+        Neighbourhood neighbourhood;
         Pos start_pos = u.pos;
         for (int d = 0; d < DirSize - 1; ++d) {
             neighbourhood[d] =
                 dfs_look_around(start_pos + Dir(d), start_pos, 0, 8, u);
         }
+        neighbourhood[DirSize - 1] = 0;
         return neighbourhood;
     }
 
@@ -551,7 +593,6 @@ private:
                     if (check_water(u, info, assigned_warriors[info.city]))
                         return move_warrior(id, info);
                     if (check_food(u, info, assigned_warriors[info.city]))
-                        // CHECK: Maybe this check improves or worsens results.
                         return move_warrior(id, info);
                     info.city = best_city;
                     ++assigned_warriors[info.city];
