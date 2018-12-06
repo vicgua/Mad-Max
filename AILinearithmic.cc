@@ -17,6 +17,8 @@ private:
     const unsigned int sentinels_per_city = 2;
     const int look_around_limit = 3;
 
+    using Neighbourhood = vector<int>;
+
     struct WarriorInfo {
         int city = -1;
         enum Role { Invader, TakingOver, Sentinel, Starving, Dehydrated };
@@ -228,18 +230,16 @@ private:
     }
 
     void recalculate_city_owners() {
-        vector<bool> changed(city_owner_changed.size(), false);
         for (unsigned int i = 0; i < city_cells.size(); ++i) {
             int old_owner = city_owners[i];
             int new_owner = cell(*(city_cells[i].begin())).owner;
             city_owners[i] = new_owner;
-            changed[i] = old_owner != new_owner;
-            if (changed[i] and old_owner != -1) {
-                --city_count[old_owner];
+            city_owner_changed[i] = old_owner != new_owner;
+            if (city_owner_changed[i]) {
+                if (old_owner != -1) { --city_count[old_owner]; }
                 ++city_count[new_owner];
             }
         }
-        city_owner_changed = move(changed);
     }
 
     void add_city_cell(vector<vector<int>> &city_map, Pos pos) {
@@ -416,74 +416,74 @@ private:
         return preferred_dir;
     }
 
-    inline bool look_around_ok(int i, int j) {
-        return i >= 0 and i < look_around_limit and j >= 0 and
-               j < look_around_limit;
+    inline int grid_dist(Pos p1, Pos p2) {
+        return max(abs(p1.i - p2.i), abs(p1.j - p2.j));
     }
-    inline bool look_around_ok(Pos p) { return look_around_ok(p.i, p.j); }
 
-    vector<vector<int>> look_around(Unit u) {
-        // Algorithm IDEA: DFS with increasing distance from origin in all
-        // directions
-        vector<vector<int>> neighbourhood(look_around_limit,
-                                          vector<int>(look_around_limit, 0));
-        Pos start_pos = u.pos;
-        for (int i = -1; i < look_around_limit + 1; ++i) {
-            for (int j = -1; j < look_around_limit + 1; ++j) {
-                Pos curr_pos = start_pos + Pos(i - look_around_limit / 2,
-                                               j - look_around_limit / 2);
-                if (not pos_ok(curr_pos)) { continue; }
-                Cell c = cell(curr_pos);
-                if (c.id == -1) { continue; }
-                Unit u_in_cell = unit(c.id);
-                if (u_in_cell.player == me()) { continue; }
-                if (u_in_cell.type == Car) {
-                    if (look_around_ok(i, j)) { neighbourhood[i][j] -= 1000; }
-                    for (int d = 0; d < DirSize - 1; ++d) {
-                        // Propagate to near cells
-                        Pos pp = Pos(i, j) + Dir(d);
-                        if (look_around_ok(pp)) {
-                            neighbourhood[pp.i][pp.j] -= 100;
-                        }
-                    }
+    int dfs_look_around(Pos current_pos, const Pos &origin, int curr_dist,
+                        int max_dist, const Unit &origin_unit) {
+        if (not pos_ok(current_pos)) { return 0; }
+        Cell c = cell(current_pos);
+        switch (c.type) {
+            case Desert:
+                curr_dist += 4;
+                break;
+            case Road:
+                curr_dist += 1;
+                break;
+            default:
+                return 0;
+        }
+        if (curr_dist > max_dist) { return 0; }
+        int current_val = 0;
+        if (c.id != -1) {
+            Unit u = unit(c.id);
+            if (u.player != me()) {
+                if (u.type == Car) {
+                    current_val -= 1000;
                 } else {
-                    // int score = min(3 * u_in_cell.food - 2 * u.food,
-                    // 3 * u_in_cell.water - 2 * u.water);
-                    int score = min(3 * u.food - 2 * u_in_cell.food,
-                                    3 * u.water - 2 * u_in_cell.water);
-                    if (look_around_ok(i, j)) { neighbourhood[i][j] += score; }
-                    if (score < 0) {
-                        for (int d = 0; d < DirSize - 1; ++d) {
-                            Pos pp = Pos(i, j) + Dir(d);
-                            if (look_around_ok(pp)) {
-                                neighbourhood[pp.i][pp.j] += score / 10;
-                            }
-                        }
-                    }
+                    current_val += min(3 * origin_unit.food - 2 * u.food,
+                                       3 * origin_unit.water - 2 * u.water);
                 }
             }
+        }
+
+        int grid_dist_to_origin = grid_dist(origin, current_pos);
+        for (int d = 0; d < DirSize - 1; ++d) {
+            Pos new_pos = current_pos + Dir(d);
+            if (grid_dist(origin, new_pos) > grid_dist_to_origin) {
+                current_val += dfs_look_around(new_pos, origin, curr_dist,
+                                               max_dist, origin_unit) /
+                               2;
+            }
+        }
+        return current_val;
+    }
+
+    Neighbourhood look_around(Unit u) {
+        Neighbourhood neighbourhood(DirSize, 0);
+        Pos start_pos = u.pos;
+        for (int d = 0; d < DirSize - 1; ++d) {
+            neighbourhood[d] =
+                dfs_look_around(start_pos + Dir(d), start_pos, 0, 8, u);
         }
         return neighbourhood;
     }
 
     /// Adds weight to a given direction in the neighbourhood map
-    inline void weight_dir(vector<vector<int>> &neighbourhood,
-                           Dir preferred_dir, int bonus = 10) {
-        Pos origin(look_around_limit / 2, look_around_limit / 2);
-        Pos bonus_pos = origin + preferred_dir;
-        neighbourhood[bonus_pos.i][bonus_pos.j] += bonus;
+    inline void weight_dir(Neighbourhood &neighbourhood, Dir preferred_dir,
+                           int bonus = 10) {
+        neighbourhood[preferred_dir] += bonus;
     }
 
     /// Gets the best direction for the current round, taking into account the
     /// best overall direction, and nearby cells
-    Dir best_immediate_dir(const vector<vector<int>> &neighbourhood) {
-        Pos origin(look_around_limit / 2, look_around_limit / 2);
-        int best_weight = neighbourhood[origin.i][origin.j];
+    Dir best_immediate_dir(const Neighbourhood &neighbourhood) {
+        int best_weight = neighbourhood[None];
         Dir best_dir = None;
-        for (int d : random_permutation(DirSize - 1)) {
-            Pos curr_pos = origin + Dir(d);
-            if (best_weight < neighbourhood[curr_pos.i][curr_pos.j]) {
-                best_weight = neighbourhood[curr_pos.i][curr_pos.j];
+        for (int d : random_permutation(neighbourhood.size())) {
+            if (best_weight < neighbourhood[d]) {
+                best_weight = neighbourhood[d];
                 best_dir = Dir(d);
             }
         }
@@ -520,7 +520,7 @@ private:
                     info.city = -1;
                     return move_warrior(id, info);
                 }
-                vector<vector<int>> neighbourhood = move(look_around(u));
+                Neighbourhood neighbourhood = look_around(u);
                 weight_dir(neighbourhood, nearest_city(u.pos));
                 dir = best_immediate_dir(neighbourhood);
                 break;
@@ -531,7 +531,7 @@ private:
                     info.city = -1;
                     return move_warrior(id, info);
                 }
-                vector<vector<int>> neighbourhood = look_around(u);
+                Neighbourhood neighbourhood = look_around(u);
                 weight_dir(neighbourhood, nearest_water(u.pos));
                 dir = best_immediate_dir(neighbourhood);
                 break;
@@ -556,7 +556,7 @@ private:
                     info.city = best_city;
                     ++assigned_warriors[info.city];
                 }
-                vector<vector<int>> neighbourhood = move(look_around(u));
+                Neighbourhood neighbourhood = look_around(u);
                 if (distance_to_city(u.pos, info.city) == 0) {
                     info.role = WarriorInfo::TakingOver;
                     return move_warrior(id, info);

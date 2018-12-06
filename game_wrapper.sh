@@ -9,7 +9,7 @@ elif [ ! -p pipe ]; then
 fi
 
 # Execute Game with same parameters; redirect STDERR to pipe
-./Game $* 2> pipe &
+time ./Game $* 2> pipe &
 GAME_PID=$!
 # Duplicate pipe content to STDERR and to debug.log, filtering "info:" messages
 tee /dev/stderr < pipe > full.log
@@ -25,7 +25,7 @@ else
 fi
 
 if [ $STATUS -ne 0 ]; then
-    echo 'error: Game exited with non-zero status' > /dev/stderr
+    echo 'warning: Game exited with non-zero status' > /dev/stderr
 fi
 
 exit $STATUS

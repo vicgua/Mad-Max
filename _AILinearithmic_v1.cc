@@ -3,7 +3,7 @@
 #include <queue>
 #include <utility>
 
-#define PLAYER_NAME Linearithmic_v1
+#define PLAYER_NAME Linearithmic_v0
 
 using namespace std;
 
