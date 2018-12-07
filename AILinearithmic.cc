@@ -300,7 +300,7 @@ private:
                                      Pos  // Position
                                      >;
         priority_queue<Dijkstra_tuple> dpq;
-        dpq.push({0, 0, start_pos});
+        dpq.push(make_tuple(0, 0, start_pos));
         set<Pos> visited;
         map<Pos, int> dist;
         dist[start_pos] = 0;
@@ -343,11 +343,11 @@ private:
                 if (it == dist.end()) {
                     dist[next_p] = distance;
                     prev[next_p] = {curr_pos, Dir(d)};
-                    dpq.push({bonus, distance, next_p});
+                    dpq.push(make_tuple(bonus, distance, next_p));
                 } else if (it->second < distance) {
                     it->second = distance;
                     prev[next_p] = {curr_pos, Dir(d)};
-                    dpq.push({bonus, distance, next_p});
+                    dpq.push(make_tuple(bonus, distance, next_p));
                 }
             }
         }
