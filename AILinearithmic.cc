@@ -16,7 +16,6 @@ private:
     const int negative_infinity = numeric_limits<int>::min();
     const int number_of_players = 4;
     const unsigned int sentinels_per_city = 2;
-    const int look_around_limit = 3;
 
     using Neighbourhood = array<int, DirSize>;
 
@@ -31,13 +30,14 @@ private:
     vector<set<Pos>> city_cells;
     /// Contains a matrix of the distances to every city from every cell on the
     /// map.
-    vector<vector<vector<int>>> nearest_city_;
+    vector<vector<vector<int>>> city_slope;
+    vector<vector<int>> any_city_slope;
     /// Contains a matrix of the distances to any water from every cell on the
     /// map.
-    vector<vector<int>> nearest_water_;
+    vector<vector<int>> water_slope;
     /// Contains a matrix of the **weighted** distances to any fuel station from
     /// every cell on the map.
-    vector<vector<int>> nearest_station_;
+    vector<vector<int>> station_slope;
 
     /// Stores the current owner of each city. Updated every moving turn.
     vector<int> city_owners;
@@ -108,10 +108,12 @@ private:
         return None;
     }
 
-    void _calculate_nearest(const set<Pos> &cells,
+    void calculate_nearest_(const set<Pos> &cells,
                             vector<vector<int>> &dist_matrix,
-                            const bool can_pass_city,
-                            const int desert_penalty) {
+                            bool can_pass_city,
+                            int desert_penalty,
+                            vector<vector<int>> &min_another) {
+        bool use_min_another = min_another.size() > 0;
         queue<Pos> bfsq;
         for (auto pos : cells) {
             dist_matrix[pos.i][pos.j] = 0;
@@ -144,52 +146,63 @@ private:
                 }
                 if (dist_matrix[next_pos.i][next_pos.j] > new_dist) {
                     dist_matrix[next_pos.i][next_pos.j] = new_dist;
+                    if (use_min_another and min_another[next_pos.i][next_pos.j] > new_dist) {
+                        min_another[next_pos.i][next_pos.j] = new_dist;
+                    }
                     bfsq.push(next_pos);
                 }
             }
         }
     }
 
+    inline void calculate_nearest_(const set<Pos> &cells,
+                        vector<vector<int>> &dist_matrix,
+                        bool can_pass_city,
+                        int desert_penalty) {
+        vector<vector<int>> null_vector(0);
+        return calculate_nearest_(cells, dist_matrix, can_pass_city, desert_penalty, null_vector);
+    }
+
     inline void calculate_nearest_water(const set<Pos> &water_cells) {
-        _calculate_nearest(water_cells, nearest_water_, true, 0);
+        calculate_nearest_(water_cells, water_slope, true, 0);
     }
 
     inline void calculate_nearest_station(const set<Pos> &station_cells) {
-        _calculate_nearest(station_cells, nearest_station_, false,
+        calculate_nearest_(station_cells, station_slope, false,
                            number_of_players - 1);
     }
 
     inline void calculate_nearest_city(int city_id) {
-        _calculate_nearest(city_cells[city_id], nearest_city_[city_id], true,
-                           0);
+        calculate_nearest_(city_cells[city_id], city_slope[city_id], true,
+                           0, any_city_slope);
     }
 
-    inline int _distance_to(Pos from, const vector<vector<int>> &distances) {
+    inline int distance_to_(Pos from, const vector<vector<int>> &distances) {
         return distances[from.i][from.j];
     }
 
     inline int distance_to_water(Pos from) {
-        return _distance_to(from, nearest_water_);
+        return distance_to_(from, water_slope);
     }
 
     inline int distance_to_station(Pos from) {
-        return _distance_to(from, nearest_station_);
+        return distance_to_(from, station_slope);
     }
 
     inline int distance_to_city(Pos from, int city_id) {
-        return _distance_to(from, nearest_city_[city_id]);
+        return distance_to_(from, city_slope[city_id]);
     }
 
-    inline int distance_to_nearest_city(Pos from) {
+    int distance_to_nearest_city(Pos from) {
         int current_min = infinity;
-        for (auto c : nearest_city_) {
-            int dist_to_c = _distance_to(from, c);
+        for (auto c : city_slope) {
+            int dist_to_c = distance_to_(from, c);
             if (dist_to_c < current_min) { current_min = dist_to_c; }
         }
         return current_min;
     }
 
-    Dir _nearest(Pos from, const vector<vector<int>> &distances) {
+    Dir nearest_(Pos from, const vector<vector<int>> &distances) {
         int current_min = distances[from.i][from.j];
         Dir current_dir = None;
         vector<int> directions(random_permutation(DirSize - 1));
@@ -206,28 +219,19 @@ private:
     }
 
     inline Dir nearest_water(Pos from) {
-        return _nearest(from, nearest_water_);
+        return nearest_(from, water_slope);
     }
 
     inline Dir nearest_station(Pos from) {
-        return _nearest(from, nearest_station_);
+        return nearest_(from, station_slope);
     }
 
     inline Dir goto_city(Pos from, int to_id) {
-        return _nearest(from, nearest_city_[to_id]);
+        return nearest_(from, city_slope[to_id]);
     }
 
-    Dir nearest_city(Pos from) {
-        int current_min = infinity;
-        int current_tgt = -1;
-        for (unsigned int i = 0; i < nearest_city_.size(); ++i) {
-            int dist_to_i = nearest_city_[i][from.i][from.j];
-            if (dist_to_i < current_min) {
-                current_min = dist_to_i;
-                current_tgt = i;
-            }
-        }
-        return (current_tgt == -1) ? None : goto_city(from, current_tgt);
+    inline Dir nearest_city(Pos from) {
+        return nearest_(from, any_city_slope);
     }
 
     void recalculate_city_owners() {
@@ -387,14 +391,14 @@ private:
                 }
             }
         }
-        nearest_water_ = nearest_station_ =
+        water_slope = station_slope = any_city_slope =
             vector<vector<int>>(r, vector<int>(c, infinity));
-        nearest_city_ = vector<vector<vector<int>>>(
+        city_slope = vector<vector<vector<int>>>(
             city_cells.size(),
             vector<vector<int>>(r, vector<int>(c, infinity)));
         calculate_nearest_water(water_cells);
         calculate_nearest_station(station_cells);
-        for (unsigned int i = 0; i < nearest_city_.size(); ++i) {
+        for (unsigned int i = 0; i < city_slope.size(); ++i) {
             calculate_nearest_city(i);
         }
         cell_locks = vector<vector<int>>(r, vector<int>(c, 0));
@@ -461,8 +465,8 @@ private:
         return max(abs(p1.i - p2.i), abs(p1.j - p2.j));
     }
 
-    int dfs_look_around(Pos current_pos, const Pos &origin, int curr_dist,
-                        int max_dist, const Unit &origin_unit) {
+    int look_around_(Pos current_pos, const Pos &origin, int curr_dist,
+                       int max_dist, const Unit &origin_unit) {
         if (not pos_ok(current_pos)) { return 0; }
         Cell c = cell(current_pos);
         switch (c.type) {
@@ -493,8 +497,8 @@ private:
         for (int d = 0; d < DirSize - 1; ++d) {
             Pos new_pos = current_pos + Dir(d);
             if (grid_dist(origin, new_pos) > grid_dist_to_origin) {
-                current_val += dfs_look_around(new_pos, origin, curr_dist,
-                                               max_dist, origin_unit) /
+                current_val += look_around_(new_pos, origin, curr_dist,
+                                              max_dist, origin_unit) /
                                2;
             }
         }
@@ -506,10 +510,31 @@ private:
         Pos start_pos = u.pos;
         for (int d = 0; d < DirSize - 1; ++d) {
             neighbourhood[d] =
-                dfs_look_around(start_pos + Dir(d), start_pos, 0, 8, u);
+                look_around_(start_pos + Dir(d), start_pos, 0, 8, u);
         }
         neighbourhood[DirSize - 1] = 0;
         return neighbourhood;
+    }
+
+    /** Modifies a Neighbourhood to take into account an underlying distance map.
+     * @param[in,out] neighbourhood The neighbourhood to modify.
+     * @param center The position where the neighbourhood is centered.
+     * @param[in] weight An underlying distance map (as a matrix).
+     * @returns The best direction, measured as the one with lowest distance and highest neighbourhood score
+     */
+    Dir weight_neighbourhood(Neighbourhood &neighbourhood, const Pos &center, const vector<vector<int>> &weight) {
+        Dir best_dir = None;
+        int best_score = negative_infinity;
+        for (int d : random_permutation(DirSize)) {
+            Pos this_pos = center + Dir(d);
+            if (not pos_ok(this_pos)) { continue; }
+            neighbourhood[d] -= weight[this_pos.i][this_pos.j] / 2;
+            if (neighbourhood[d] > best_score) {
+                best_dir = Dir(d);
+                best_score = neighbourhood[d];
+            }
+        }
+        return best_dir;
     }
 
     /// Adds weight to a given direction in the neighbourhood map
@@ -554,7 +579,7 @@ private:
 
     void move_warrior(int id, WarriorInfo &info) {
         Unit u = unit(id);
-        Dir dir;
+        Dir dir = None;
         switch (info.role) {
             case WarriorInfo::Starving: {
                 if (u.food == warriors_health()) {
@@ -563,8 +588,7 @@ private:
                     return move_warrior(id, info);
                 }
                 Neighbourhood neighbourhood = look_around(u);
-                weight_dir(neighbourhood, nearest_city(u.pos));
-                dir = best_immediate_dir(neighbourhood);
+                dir = weight_neighbourhood(neighbourhood, u.pos, any_city_slope);
                 break;
             }
             case WarriorInfo::Dehydrated: {
@@ -574,8 +598,7 @@ private:
                     return move_warrior(id, info);
                 }
                 Neighbourhood neighbourhood = look_around(u);
-                weight_dir(neighbourhood, nearest_water(u.pos));
-                dir = best_immediate_dir(neighbourhood);
+                dir = weight_neighbourhood(neighbourhood, u.pos, water_slope);
                 break;
             }
             case WarriorInfo::Invader: {
@@ -602,8 +625,7 @@ private:
                     info.role = WarriorInfo::TakingOver;
                     return move_warrior(id, info);
                 }
-                weight_dir(neighbourhood, goto_city(u.pos, info.city));
-                dir = best_immediate_dir(neighbourhood);
+                dir = weight_neighbourhood(neighbourhood, u.pos, city_slope[info.city]);
                 break;
             }
             case WarriorInfo::TakingOver:
@@ -640,18 +662,7 @@ private:
         } else {
             dir = find_nearest_enemy(u.pos);
         }
-        if (lock(u.pos + dir)) {
-            command(id, dir);
-        } else if (not lock(u.pos)) {
-            int d;
-            for (d = 0; d < DirSize; ++d) {
-                if (lock(u.pos + Dir(d))) {
-                    command(id, Dir(d));
-                    break;
-                }
-            }
-            if (d == DirSize) { cerr << "Car " << id << " is doomed!" << endl; }
-        }
+        command(id, lock_or_escape(u.pos, dir));
     }
 
     void collect_dead_warriors() {

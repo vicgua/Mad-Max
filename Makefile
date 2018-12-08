@@ -15,7 +15,7 @@
 DUMMY_OBJ = AIDummy.o
 
 # Add here any extra .o player files you want to link to the executable
-EXTRA_OBJS =
+EXTRA_OBJS = 
 
 # Config
 OPTIMIZE = 0 # Optimization level (0 to 3)
@@ -31,7 +31,6 @@ PROFILE  = 1 # Compile for profile (0 or 1)
 
 PLAYERS_SRC = $(wildcard AI*.cc)
 PLAYERS_OBJ = $(patsubst %.cc, %.o, $(PLAYERS_SRC)) $(EXTRA_OBJS) $(DUMMY_OBJ)
-PLAYERS_SHARE_OBJ = $(patsubst %.o, %.share.o, $(PLAYERS_OBJ))
 
 # Flags
 
