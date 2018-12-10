@@ -6,7 +6,7 @@
 #include <set>
 #include <utility>
 
-#define PLAYER_NAME Linearithm_1
+#define PLAYER_NAME Linearithm_2
 
 using namespace std;
 
@@ -294,6 +294,108 @@ private:
                      max(total_score(u.player) - total_score(me()), 0) * 4);
     }
 
+    bool car_safe(Pos p) {
+        for (int d = 0; d < DirSize; ++d) {
+            Pos cp = p + Dir(d);
+            if (not pos_ok(cp)) { continue; }
+            Cell c = cell(cp);
+            if (c.id < 0) { continue; }
+            Unit u = unit(c.id);
+            if (u.type == Warrior or u.player == me()) { continue; }
+            if (can_move(u.id)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    struct CarScore {
+        int malus;
+        int bonus;
+        int distance;
+        Pos pos;
+
+        CarScore(int malus, int bonus, int distance, Pos pos) :
+            malus(malus), bonus(bonus), distance(distance), pos(pos) {}
+
+        inline int score() const {
+            return 4 * bonus - 1000 * malus - distance;
+        }
+
+        bool operator < (const CarScore &other) const {
+            return this->score() < other.score();
+        }
+    };
+
+    Dir find_car_enemy(Pos start_pos, int max_dist) {
+        priority_queue<CarScore> dpq;
+        dpq.push(CarScore(0, 0, 0, start_pos));
+        vector<vector<bool>> visited(rows(), vector<bool>(cols(), false));
+        vector<vector<Dir>> prev(rows(), vector<Dir>(cols(), None));
+        vector<vector<int>> scores(rows(), vector<int>(cols(), negative_infinity));
+        scores[start_pos.i][start_pos.j] = dpq.top().score();
+        Pos current_best = start_pos;
+        while (not dpq.empty()) {
+            CarScore curr_score = dpq.top();
+            dpq.pop();
+            if (curr_score.distance > max_dist) { continue; }
+            if (visited[curr_score.pos.i][curr_score.pos.j]) { continue; }
+            visited[curr_score.pos.i][curr_score.pos.j] = true;
+            if (not pos_ok(curr_score.pos)) { continue; }
+            if (not car_safe(curr_score.pos)) { ++curr_score.malus; }
+            Cell c = cell(curr_score.pos);
+
+            int added_distance;
+            switch (c.type) {
+                case Desert:
+                    added_distance = 4;
+                    break;
+                case Road:
+                    added_distance = 1;
+                    break;
+                default:
+                    continue;
+            };
+
+            if (c.id >= 0) {
+                Unit u = unit(c.id);
+                if (u.player != me()) {
+                    if (u.type == Car) {
+                        curr_score.malus += 9;
+                    } else {
+                        curr_score.bonus += score_warrior(u);
+                    }
+                }
+            }
+
+            scores[curr_score.pos.i][curr_score.pos.j] = curr_score.score();
+            if (curr_score.score() >= scores[current_best.i][current_best.j]) {
+                current_best = curr_score.pos;
+            }
+
+            for (int d = 0; d < DirSize - 1; ++d) {
+                Pos next_p = curr_score.pos + Dir(d);
+                if (not pos_ok(next_p)) { continue; }
+                if (scores[next_p.i][next_p.j] < curr_score.score() - added_distance) {
+                    prev[next_p.i][next_p.j] = Dir(d);
+                    CarScore next_score = curr_score;
+                    next_score.distance += added_distance;
+                    dpq.push(next_score);
+                }
+            }
+        }
+
+        Pos current_pos = current_best;
+        Dir last_dir = None;
+        while (current_pos != start_pos) {
+            last_dir = prev[current_pos.i][current_pos.j];
+            if (last_dir == None) { break; }
+            current_pos += Dir((last_dir + (DirSize - 1) / 2) % (DirSize - 1)); // Reverse direction
+        }
+        return last_dir;
+    }
+
+#if 0
     Dir find_nearest_enemy(Pos start_pos) {
         using Dijkstra_tuple = tuple<int, // bonus (>= 0)
                                      int, // -distance (<= 0)
@@ -362,6 +464,7 @@ private:
         }
         return path_dir;
     }
+#endif
 
     void init() {
         int r = rows();
@@ -448,7 +551,8 @@ private:
         preferred_dir = dir_from_pos(start_pos, preferred_pos);
         if (preferred_dir == None) {
             for (int d : directions) {
-                if (cell(start_pos + Dir(d)).type == City) {
+                Pos new_pos = start_pos + Dir(d);
+                if (pos_ok(new_pos) and cell(new_pos).type == City) {
                     preferred_dir = Dir(d);
                     break;
                 }
@@ -638,7 +742,7 @@ private:
         if (distance_to_station(u.pos) >= u.food - 5) {
             dir = nearest_station(u.pos);
         } else {
-            dir = find_nearest_enemy(u.pos);
+            dir = find_car_enemy(u.pos, 100);
         }
         if (lock(u.pos + dir)) {
             command(id, dir);
