@@ -461,7 +461,7 @@ private:
         return max(abs(p1.i - p2.i), abs(p1.j - p2.j));
     }
 
-    int dfs_look_around(Pos current_pos, const Pos &origin, int curr_dist,
+    int look_around_(Pos current_pos, const Pos &origin, int curr_dist,
                         int max_dist, const Unit &origin_unit) {
         if (not pos_ok(current_pos)) { return 0; }
         Cell c = cell(current_pos);
@@ -493,9 +493,9 @@ private:
         for (int d = 0; d < DirSize - 1; ++d) {
             Pos new_pos = current_pos + Dir(d);
             if (grid_dist(origin, new_pos) > grid_dist_to_origin) {
-                current_val += dfs_look_around(new_pos, origin, curr_dist,
+                current_val += look_around_(new_pos, origin, curr_dist,
                                                max_dist, origin_unit) /
-                               2;
+                               4;
             }
         }
         return current_val;
@@ -506,7 +506,7 @@ private:
         Pos start_pos = u.pos;
         for (int d = 0; d < DirSize - 1; ++d) {
             neighbourhood[d] =
-                dfs_look_around(start_pos + Dir(d), start_pos, 0, 8, u);
+                look_around_(start_pos + Dir(d), start_pos, 0, 8, u);
         }
         neighbourhood[DirSize - 1] = 0;
         return neighbourhood;
