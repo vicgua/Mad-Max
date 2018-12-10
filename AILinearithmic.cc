@@ -6,7 +6,7 @@
 #include <set>
 #include <utility>
 
-#define PLAYER_NAME Linearithm_1
+#define PLAYER_NAME Linearithm_2
 
 using namespace std;
 
