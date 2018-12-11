@@ -590,13 +590,13 @@ private:
                             best_city = city;
                         }
                     }
-                    if (check_water(u, info, assigned_warriors[info.city]))
-                        return move_warrior(id, info);
-                    if (check_food(u, info, assigned_warriors[info.city]))
-                        return move_warrior(id, info);
                     info.city = best_city;
                     ++assigned_warriors[info.city];
                 }
+                if (check_water(u, info, assigned_warriors[info.city]))
+                    return move_warrior(id, info);
+                if (check_food(u, info, assigned_warriors[info.city]))
+                    return move_warrior(id, info);
                 Neighbourhood neighbourhood = look_around(u);
                 if (distance_to_city(u.pos, info.city) == 0) {
                     info.role = WarriorInfo::TakingOver;
